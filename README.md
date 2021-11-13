@@ -9,7 +9,7 @@ Python client that help you to talk with [TooGoodToGo](https://toogoodtogo.com) 
 Python version: 3.6, 3.7, 3.8, 3.9
 
 Handle:
-- login (`/api/auth/v1/loginByEmail`)
+- login (`/api/auth/v3/authByEmail`)
 - list stores (`/api/item/`)
 - get a store (`/api/item/:id`)
 - set favorite (`/api/item/:id/setFavorite`)
@@ -28,12 +28,57 @@ pip install tgtg
 
 ### Build the client
 
+As TooGoodToGo recently switched on two-factor auth, login with username and password is no longer possible.
+
+When you create a client you need to click the `[LOGIN]` button at the mail send by TooGoodToGO (check spam/junk inbox if needed).
+
 ```python
 from tgtg import TgtgClient
 
-client = TgtgClient(email="<your_email>", password="<your_password>")
-
+client = TgtgClient(email="<your_email>")
 ```
+
+If you want to, you can pass a `store_function` that will be called when the login session was created successfully or the token was refreshed.  
+This way you don't need to manually click the email every time you initiate a client object.  
+
+Example:
+
+```python
+import dateutil
+import json
+from tgtg import TgtgClient
+import logging
+
+def store_login(user_id, access_token, refresh_token, last_time_token_refreshed):
+    with open("session.json", "w") as outfile:
+        json.dump({
+            "user_id": user_id,
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "last_time_token_refreshed": last_time_token_refreshed
+        }, outfile, default=str, indent=4)
+
+try:
+    logging.info("Loading existing session...")
+    with open("session.json") as f:
+        session = json.load(f)
+    logging.info("Existing session successfully loaded.")
+except Exception as e:
+    logging.warning("Session file (session.json) could not be loaded")
+    logging.exception(e)
+    session = {}        
+        
+client = TgtgClient(
+        access_token=session.get("access_token", None),
+        user_id=session.get("user_id", None),
+        refresh_token=session.get("refresh_token", None),
+        last_time_token_refreshed=dateutil.parser.parse(session.get("last_time_token_refreshed", "1970-01-01")),
+        email="<your_email>",
+        timeout=30,
+        store_function=store_login
+    )
+```
+
 ### Get items
 
 ```python

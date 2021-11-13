@@ -1,7 +1,7 @@
 import datetime
 import random
-import warnings
 from http import HTTPStatus
+from time import sleep
 from urllib.parse import urljoin
 
 import requests
@@ -10,7 +10,8 @@ from .exceptions import TgtgAPIError, TgtgLoginError
 
 BASE_URL = "https://apptoogoodtogo.com/api/"
 API_ITEM_ENDPOINT = "item/v7/"
-LOGIN_ENDPOINT = "auth/v1/loginByEmail"
+LOGIN_ENDPOINT = "auth/v3/authByEmail"
+AUTH_ENDPOINT = "auth/v3/authByRequestPollingId"
 SIGNUP_BY_EMAIL_ENDPOINT = "auth/v2/signUpByEmail"
 REFRESH_ENDPOINT = "auth/v1/token/refresh"
 ALL_BUSINESS_ENDPOINT = "map/v1/listAllBusinessMap"
@@ -34,34 +35,41 @@ class TgtgClient:
         language="en-UK",
         proxies=None,
         timeout=None,
+        refresh_token=None,
+        last_time_token_refreshed=None,
         access_token_lifetime=DEFAULT_ACCESS_TOKEN_LIFETIME,
+        store_function = None
     ):
         self.base_url = url
 
         self.email = email
         self.password = password
+        if self.password:
+            raise DeprecationWarning("'password' is deprecated, use 'email' only ")
 
         self.access_token = access_token
-        if self.access_token is not None:
-            warnings.warn("'access_token' is deprecated; use 'email' and 'password'")
-        self.refresh_token = None
-        self.last_time_token_refreshed = None
+        self.refresh_token = refresh_token
+        self.last_time_token_refreshed = last_time_token_refreshed
         self.access_token_lifetime = access_token_lifetime
 
         self.user_id = user_id
-        if self.user_id is not None:
-            warnings.warn("'user_id' is deprecated; use 'email' and 'password'")
         self.user_agent = user_agent if user_agent else random.choice(USER_AGENTS)
         self.language = language
         self.proxies = proxies
         self.timeout = timeout
+
+        self.store_function = store_function
 
     def _get_url(self, path):
         return urljoin(self.base_url, path)
 
     @property
     def _headers(self):
-        headers = {"user-agent": self.user_agent, "accept-language": self.language}
+        headers = {
+            "user-agent": self.user_agent,
+            "accept-language": self.language,
+            "Accept-Encoding": "gzip"
+        }
         if self.access_token:
             headers["authorization"] = f"Bearer {self.access_token}"
         return headers
@@ -86,9 +94,14 @@ class TgtgClient:
             timeout=self.timeout,
         )
         if response.status_code == HTTPStatus.OK:
+            print(response.json())
             self.access_token = response.json()["access_token"]
             self.refresh_token = response.json()["refresh_token"]
             self.last_time_token_refreshed = datetime.datetime.now()
+
+            if self.store_function:
+                self.store_function(access_token=self.access_token, refresh_token=self.refresh_token,
+                                    user_id=self.user_id, last_time_token_refreshed=self.last_time_token_refreshed)
         else:
             raise TgtgAPIError(response.status_code, response.content)
 
@@ -96,30 +109,63 @@ class TgtgClient:
         if self._already_logged:
             self._refresh_token()
         else:
-            if not self.email or not self.password:
+            if not self.access_token and not self.email:
                 raise ValueError(
-                    "You must fill email and password or access_token and user_id"
+                    "You must fill email"
                 )
 
+            # Step 1, request two factor mail
             response = requests.post(
                 self._get_url(LOGIN_ENDPOINT),
                 headers=self._headers,
                 json={
                     "device_type": "ANDROID",
                     "email": self.email,
-                    "password": self.password,
                 },
                 proxies=self.proxies,
                 timeout=self.timeout,
             )
             if response.status_code == HTTPStatus.OK:
                 login_response = response.json()
-                self.access_token = login_response["access_token"]
-                self.refresh_token = login_response["refresh_token"]
-                self.last_time_token_refreshed = datetime.datetime.now()
-                self.user_id = login_response["startup_data"]["user"]["user_id"]
+
+
             else:
                 raise TgtgLoginError(response.status_code, response.content)
+
+            # Step 2, request periodically check if link has been clicked
+            retries = 60
+            while retries > 0:
+                response = requests.post(
+                    self._get_url(AUTH_ENDPOINT),
+                    headers=self._headers,
+                    json={
+                        "device_type": "ANDROID",
+                        "email": self.email,
+                        "request_polling_id": login_response['polling_id'],
+                    },
+                    proxies=self.proxies,
+                    timeout=self.timeout,
+                )
+                if response.status_code == HTTPStatus.OK:
+                    login_response = response.json()
+                    self.access_token = login_response["access_token"]
+                    self.refresh_token = login_response["refresh_token"]
+                    self.last_time_token_refreshed = datetime.datetime.now()
+                    self.user_id = login_response["startup_data"]["user"]["user_id"]
+
+                    if self.store_function:
+                        self.store_function(access_token=self.access_token,
+                                            refresh_token=self.refresh_token,
+                                            user_id=self.user_id,
+                                            last_time_token_refreshed=self.last_time_token_refreshed)
+
+                    break
+                elif response.status_code == HTTPStatus.ACCEPTED:
+                    print("Login request not yet accepted. Check mail.")
+                    sleep(10)
+                    retries -= 1
+                else:
+                    raise TgtgLoginError(response.status_code, response.content)
 
     def get_items(
         self,
