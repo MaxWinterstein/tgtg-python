@@ -38,7 +38,7 @@ class TgtgClient:
         refresh_token=None,
         last_time_token_refreshed=None,
         access_token_lifetime=DEFAULT_ACCESS_TOKEN_LIFETIME,
-        store_function = None
+        store_function=None,
     ):
         self.base_url = url
 
@@ -68,7 +68,7 @@ class TgtgClient:
         headers = {
             "user-agent": self.user_agent,
             "accept-language": self.language,
-            "Accept-Encoding": "gzip"
+            "Accept-Encoding": "gzip",
         }
         if self.access_token:
             headers["authorization"] = f"Bearer {self.access_token}"
@@ -100,8 +100,12 @@ class TgtgClient:
             self.last_time_token_refreshed = datetime.datetime.now()
 
             if self.store_function:
-                self.store_function(access_token=self.access_token, refresh_token=self.refresh_token,
-                                    user_id=self.user_id, last_time_token_refreshed=self.last_time_token_refreshed)
+                self.store_function(
+                    access_token=self.access_token,
+                    refresh_token=self.refresh_token,
+                    user_id=self.user_id,
+                    last_time_token_refreshed=self.last_time_token_refreshed,
+                )
         else:
             raise TgtgAPIError(response.status_code, response.content)
 
@@ -110,9 +114,7 @@ class TgtgClient:
             self._refresh_token()
         else:
             if not self.access_token and not self.email:
-                raise ValueError(
-                    "You must fill email"
-                )
+                raise ValueError("You must fill email")
 
             # Step 1, request two factor mail
             response = requests.post(
@@ -128,7 +130,6 @@ class TgtgClient:
             if response.status_code == HTTPStatus.OK:
                 login_response = response.json()
 
-
             else:
                 raise TgtgLoginError(response.status_code, response.content)
 
@@ -141,7 +142,7 @@ class TgtgClient:
                     json={
                         "device_type": "ANDROID",
                         "email": self.email,
-                        "request_polling_id": login_response['polling_id'],
+                        "request_polling_id": login_response["polling_id"],
                     },
                     proxies=self.proxies,
                     timeout=self.timeout,
@@ -154,10 +155,12 @@ class TgtgClient:
                     self.user_id = login_response["startup_data"]["user"]["user_id"]
 
                     if self.store_function:
-                        self.store_function(access_token=self.access_token,
-                                            refresh_token=self.refresh_token,
-                                            user_id=self.user_id,
-                                            last_time_token_refreshed=self.last_time_token_refreshed)
+                        self.store_function(
+                            access_token=self.access_token,
+                            refresh_token=self.refresh_token,
+                            user_id=self.user_id,
+                            last_time_token_refreshed=self.last_time_token_refreshed,
+                        )
 
                     break
                 elif response.status_code == HTTPStatus.ACCEPTED:
