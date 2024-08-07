@@ -6,16 +6,20 @@
 
 Python client that help you to talk with [TooGoodToGo](https://toogoodtogo.com) API.
 
-Python version: 3.7+
+Python version: 3.8+
 
 Handle:
 
-- create an account (`auth/vX/signUpByEmail`)
+- create an account (`/api/auth/vX/signUpByEmail`)
 - login (`/api/auth/vX/authByEmail`)
 - refresh token (`/api/auth/vX/token/refresh`)
-- list stores (`/api/item/`)
-- get a store (`/api/item/:id`)
-- set favorite (`/api/item/:id/setFavorite`)
+- list stores (`/api/item/vX`)
+- get a store (`/api/item/vX/:id`)
+- get favorites (`/api/discover/vX/bucket`)
+- set favorite (`/api/user/favorite/vX/:id/update`)
+- create an order (`/api/order/vX/create/:id`)
+- abort an order (`/api/order/vX/:id/abort`)
+- get the status of an order (`/api/order/vX/:id/status`)
 - get active orders (`/api/order/vX/active`)
 - get inactive orders (`/api/order/vX/inactive`)
 
@@ -87,7 +91,7 @@ print(items)
     {
         "item": {
             "item_id": "64346",
-            "price": {"code": "EUR", "minor_units": 499, "decimals": 2},
+            "item_price": {"code": "EUR", "minor_units": 499, "decimals": 2},
             "sales_taxes": [],
             "tax_amount": {"code": "EUR", "minor_units": 0, "decimals": 2},
             "price_excluding_taxes": {"code": "EUR", "minor_units": 499, "decimals": 2},
@@ -416,6 +420,85 @@ print(item)
 
 </details>
 
+## Create an order
+
+```python
+order = client.create_order(item_id, number_of_items_to_order)
+print(order)
+```
+
+<details>
+<summary>Example response</summary>
+
+```python
+{
+  "id": "<order_id>",
+  "item_id": "<item_id_that_was_ordered>",
+  "user_id": "<your_user_id>",
+  "state": "RESERVED",
+  "order_line": {
+    "quantity": 1,
+    "item_price_including_taxes": {
+      "code": "EUR",
+      "minor_units": 600,
+      "decimals": 2
+    },
+    "item_price_excluding_taxes": {
+      "code": "EUR",
+      "minor_units": 550,
+      "decimals": 2
+    },
+    "total_price_including_taxes": {
+      "code": "EUR",
+      "minor_units": 600,
+      "decimals": 2
+    },
+    "total_price_excluding_taxes": {
+      "code": "EUR",
+      "minor_units": 550,
+      "decimals": 2
+    }
+  },
+  "reserved_at": "2023-01-01T10:30:32.331280392",
+  "order_type": "MAGICBAG"
+}
+```
+
+</details>
+
+Please note that payment of an order is currently not implemented.
+In other words: you can create an order via this client, but you can not pay for it.
+
+### Get the status of an order
+
+```python
+order_status = client.get_order_status(order_id)
+print(order_status)
+```
+
+<details>
+<summary>Example response</summary>
+
+```python
+{
+  "id": "<order_id>",
+  "item_id": "<item_id_that_was_ordered>",
+  "user_id": "<your_user_id>",
+  "state": "RESERVED"
+}
+```
+
+</details>
+
+### Abort an order
+```python
+client.abort_order(order_id)
+```
+
+When successful, this call will not return a value.
+
+The app uses this call when the user aborts an order before paying for it. When the order has been payed, the app uses a different call.
+
 ### Get active orders
 
 ```python
@@ -460,6 +543,17 @@ To e.g. sum up all orders you have ever made:
         f"Total money spend: ~{money_spend:.2f}{redeemed_orders[0]['price_including_taxes']['code']}"
     )
 ```
+
+### Get favorites
+
+This will list all the currently set favorite stores.
+
+```python
+favorites = client.get_favorites()
+print(favorites)
+```
+
+The behavior of `get_favorites` is more or less the same as `get_items()`, but better mimics the official application.
 
 ### Set favorite
 
